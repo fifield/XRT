@@ -268,7 +268,7 @@ PYBIND11_MODULE(pyxrt, m) {
  * xrt::bo
  *
  */
-    py::class_<xrt::bo> pybo(m, "bo", "Represents a buffer object");
+    py::class_<xrt::bo> pybo(m, "bo", py::buffer_protocol(), "Represents a buffer object");
 
     py::enum_<xrt::bo::flags>(pybo, "flags", "Buffer object creation flags")
         .value("normal", xrt::bo::flags::normal)
@@ -297,8 +297,22 @@ PYBIND11_MODULE(pyxrt, m) {
         .def("sync", ([](xrt::bo& b, xclBOSyncDirection dir) {
                           b.sync(dir);
                       }), "Sync entire buffer content in specified direction.")
-        .def("map", ([](xrt::bo &b)  {
-                         return py::memoryview::from_memory(b.map(), b.size());
+        .def_buffer([](xrt::bo &b) -> py::buffer_info {
+            return py::buffer_info(
+                b.map(),                                     // pointer to buffer
+                1,                                           // size of one element (byte)
+                py::format_descriptor<uint8_t>::format(),    // Python struct format
+                1,                                           // number of dimensions
+                { static_cast<ssize_t>(b.size()) },          // shape
+                { 1 }                                        // strides (contiguous bytes)
+            );
+        })
+        .def("map", ([](py::object self) {
+                         // Create a memoryview via the buffer protocol (def_buffer above).
+                         // The memoryview holds a reference to self (the bo wrapper),
+                         // preventing the underlying buffer from being freed while
+                         // the view (or any numpy array derived from it) is alive.
+                         return py::memoryview(self);
                      }), "Create a byte accessible memory view of the buffer object")
         .def("size", &xrt::bo::size, "Return the size of the buffer object")
         .def("address", &xrt::bo::address, "Return the device physical address of the buffer object");
